@@ -131,7 +131,7 @@ Por ter sido construído com tecnologias web nativas (**Vanilla HTML/CSS/JS**), 
 ### Opção 1: Execução Direta
 1. Clone este repositório:
    ```bash
-   git clone https://github.com/SEU_USUARIO/App-Aguia.git
+   git clone https://github.com/gvnfcosta/App--guia.git
    ```
 2. Navegue até a pasta `IHM/`.
 3. Abra o arquivo `index.html` em qualquer navegador web moderno (Google Chrome, Microsoft Edge, Firefox, Brave, Safari).
