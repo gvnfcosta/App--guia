@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IHM - Controle Térmico de Forno Cerâmico</title>
+  
+  <!-- Google Fonts: Orbitron for digital displays, Inter for modern UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Orbitron:wght@400;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js for smooth industrial temperature curves -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-dark">
+  <!-- Audio Synthesizer Toggle & Overlay for Audio Unlock -->
+  <div id="alarmOverlay" class="alarm-overlay hidden"></div>
+
+  <!-- Modal Alerta de Pânico -->
+  <div id="panicModal" class="modal-backdrop hidden">
+    <div class="modal-card panic-card">
+      <div class="panic-icon-pulse">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h2>PARADA DE EMERGÊNCIA ATIVADA</h2>
+      <p>Todas as resistências de aquecimento foram desenergizadas imediatamente. Sistema em modo de corte seguro.</p>
+      <div class="panic-actions">
+        <button id="btnResetPanic" class="btn btn-warning">
+          <i class="fa-solid fa-rotate-right"></i> Resetar Trava de Segurança
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ihm-container">
+    <!-- Top Header / SCADA Navbar -->
+    <header class="ihm-header">
+      <div class="header-brand">
+        <div class="brand-logo">
+          <i class="fa-solid fa-fire-burner"></i>
+        </div>
+        <div class="brand-text">
+          <h1>TERMO-KILN <span>SCADA 4.0</span></h1>
+          <p>IHM de Controle de Queima & Rampas Térmicas</p>
+        </div>
+      </div>
+
+      <div class="system-status-indicator">
+        <div class="status-beacon" id="statusBeacon"></div>
+        <div class="status-details">
+          <span class="status-label">STATUS DO SISTEMA</span>
+          <span class="status-value" id="systemStateText">STANDBY / PRONTO</span>
+        </div>
+      </div>
+
+      <div class="header-widgets">
+        <!-- Simulation Speed Multiplier -->
+        <div class="sim-speed-control" title="Simulação de Tempo: 1 minuto virtual = 1 segundo real">
+          <span class="widget-label"><i class="fa-solid fa-stopwatch-20"></i> Modo Teste:</span>
+          <div class="speed-buttons">
+            <button class="btn-speed" data-speed="1">1x Real</button>
+            <button class="btn-speed" data-speed="10">10x</button>
+            <button class="btn-speed" data-speed="30">30x</button>
+            <button class="btn-speed active" data-speed="60" title="1 minuto = 1 segundo">60x (1min = 1s)</button>
+            <button class="btn-speed" data-speed="120">120x</button>
+          </div>
+        </div>
+
+        <div class="header-clock">
+          <i class="fa-regular fa-clock"></i>
+          <span id="liveClock">00:00:00</span>
+        </div>
+
+        <button id="btnToggleSound" class="btn-icon" title="Ativar/Mudo Alertas Sonoros">
+          <i class="fa-solid fa-volume-high" id="soundIcon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Grid Layout -->
+    <main class="ihm-main-grid">
+      
+      <!-- LEFT COLUMN: Parameter Configuration & Physical Buttons -->
+      <section class="ihm-panel panel-controls">
+        <div class="panel-header">
+          <i class="fa-solid fa-sliders"></i>
+          <h2>Parâmetros da Queima</h2>
+        </div>
+
+        <div class="panel-body">
+          <form id="kilnConfigForm" onsubmit="event.preventDefault();">
+            
+            <!-- Temperatura de Arranque (1/3 do Máximo) -->
+            <div class="input-group">
+              <div class="input-label-row">
+                <label for="inputTempArranque">
+                  <i class="fa-solid fa-temperature-low"></i> 1º Patamar (1/3 Máx / Arranque)
+                </label>
+                <span class="input-badge" id="badgeArranque">350 °C</span>
+              </div>
+              <div class="input-slider-wrap">
+                <input type="number" id="inputTempArranque" min="50" max="800" value="350" step="5" class="num-input">
+                <span class="unit">°C</span>
+              </div>
+              <input type="range" id="rangeTempArranque" min="50" max="800" value="350" step="5" class="slider">
+              <small class="field-hint">Primeiro terço da curva com patamar de 15 min</small>
+            </div>
+
+            <!-- Patamar 1 (1/3 Max) -->
+            <div class="plateau-info-box">
+              <div class="plateau-icon"><i class="fa-solid fa-stopwatch"></i></div>
+              <div class="plateau-content">
+                <strong>1º Patamar (1/3 Máx):</strong>
+                <span id="labelPatamar1Info">350 °C • 15 Minutos</span>
+              </div>
+              <div class="plateau-status-tag" id="tagPatamar1">Aguardando</div>
+            </div>
+
+            <!-- Patamar 2 (2/3 Max) -->
+            <div class="plateau-info-box">
+              <div class="plateau-icon"><i class="fa-solid fa-stopwatch"></i></div>
+              <div class="plateau-content">
+                <strong>2º Patamar (2/3 Máx):</strong>
+                <span id="labelPatamar2Info">700 °C • 15 Minutos</span>
+              </div>
+              <div class="plateau-status-tag" id="tagPatamar2">Aguardando</div>
+            </div>
+
+            <!-- Temperatura Máxima (3/3) -->
+            <div class="input-group">
+              <div class="input-label-row">
+                <label for="inputTempMax">
+                  <i class="fa-solid fa-temperature-high"></i> Temp. Máxima (3/3 Máx)
+                </label>
+                <span class="input-badge peak" id="badgeMax">1050 °C</span>
+              </div>
+              <div class="input-slider-wrap">
+                <input type="number" id="inputTempMax" min="500" max="1350" value="1050" step="10" class="num-input">
+                <span class="unit">°C</span>
+              </div>
+              <input type="range" id="rangeTempMax" min="500" max="1350" value="1050" step="10" class="slider slider-peak">
+              <small class="field-hint">Ponto máximo de queima com patamar de 15 min</small>
+            </div>
+
+            <!-- Patamar 3 (Máxima) -->
+            <div class="plateau-info-box">
+              <div class="plateau-icon"><i class="fa-solid fa-stopwatch"></i></div>
+              <div class="plateau-content">
+                <strong>3º Patamar (Máximo):</strong>
+                <span id="labelPatamar3Info">1050 °C • 15 Minutos</span>
+              </div>
+              <div class="plateau-status-tag" id="tagPatamar3">Aguardando</div>
+            </div>
+
+            <!-- Resfriamento Seguro -->
+            <div class="plateau-info-box cool-info">
+              <div class="plateau-icon"><i class="fa-solid fa-snowflake"></i></div>
+              <div class="plateau-content">
+                <strong>Resfriamento Seguro:</strong>
+                <span>Descida contínua até &lt; 30 °C</span>
+              </div>
+              <div class="plateau-status-tag" id="tagCooling">Aguardando</div>
+            </div>
+
+            <!-- Presets Rápidos -->
+            <div class="presets-container">
+              <span class="presets-title"><i class="fa-solid fa-bookmark"></i> Presets Cerâmicos:</span>
+              <div class="presets-grid">
+                <button type="button" class="btn-preset" data-arranque="400" data-max="980">Biscoito (980°C)</button>
+                <button type="button" class="btn-preset active" data-arranque="450" data-max="1050">Faiança (1050°C)</button>
+                <button type="button" class="btn-preset" data-arranque="500" data-max="1220">Grés (1220°C)</button>
+                <button type="button" class="btn-preset" data-arranque="550" data-max="1280">Porcelana (1280°C)</button>
+              </div>
+            </div>
+
+          </form>
+        </div>
+
+        <!-- Physical Industrial Control Push-buttons -->
+        <div class="panel-footer control-buttons">
+          <button id="btnStartProcess" class="btn-industrial btn-start">
+            <div class="led-light" id="ledStart"></div>
+            <div class="btn-content">
+              <i class="fa-solid fa-play"></i>
+              <span>LIGAR / INICIAR</span>
+            </div>
+          </button>
+
+          <button id="btnPauseProcess" class="btn-industrial btn-pause" disabled>
+            <div class="led-light" id="ledPause"></div>
+            <div class="btn-content">
+              <i class="fa-solid fa-pause"></i>
+              <span>PAUSAR</span>
+            </div>
+          </button>
+
+          <!-- EMERGENCY PANIC BUTTON (E-STOP) -->
+          <div class="panic-container">
+            <div class="panic-collar">
+              <button id="btnPanic" class="btn-panic" title="PARADA DE EMERGÊNCIA TOTAL">
+                <span class="panic-text">PÂNICO</span>
+                <span class="panic-sub">EMERGÊNCIA</span>
+              </button>
+            </div>
+            <span class="panic-caption"><i class="fa-solid fa-hand"></i> CORTE GERAL</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- CENTER COLUMN: Real-Time Kiln Telemetry & Graphic Kiln Visualizer -->
+      <section class="ihm-panel panel-center">
+        
+        <!-- Live Gauges & Digital Readouts -->
+        <div class="telemetry-grid">
+          <!-- Main Big Display: Current Kiln Temperature -->
+          <div class="telemetry-card main-temp-card">
+            <div class="card-header-bar">
+              <span class="card-title"><i class="fa-solid fa-temperature-three-quarters"></i> TEMPERATURA ATUAL</span>
+              <span class="sensor-ok"><i class="fa-solid fa-circle-check"></i> TERMOPAR TIPO K</span>
+            </div>
+            
+            <div class="big-temp-display">
+              <div class="temp-digits" id="dispCurrentTemp">25.0</div>
+              <div class="temp-unit">°C</div>
+            </div>
+
+            <div class="temp-progress-track">
+              <div class="temp-progress-bar" id="tempProgressBar" style="width: 2%;"></div>
+            </div>
+
+            <div class="temp-meta-row">
+              <div class="meta-item">
+                <span class="meta-label">SETPOINT ALVO</span>
+                <span class="meta-val" id="dispTargetSetpoint">25.0 °C</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">TAXA ATUAL</span>
+                <span class="meta-val" id="dispRampRate">+0.0 °C/min</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">POTÊNCIA RESISTÊNCIAS</span>
+                <span class="meta-val" id="dispPowerPct">0 %</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stage Countdown & Stage Tracker -->
+          <div class="telemetry-card stage-card">
+            <div class="card-header-bar">
+              <span class="card-title"><i class="fa-solid fa-hourglass-half"></i> TEMPO DO PATAMAR</span>
+              <span class="stage-tag" id="dispCurrentPhaseName">STANDBY</span>
+            </div>
+
+            <!-- Plateau Timer Display -->
+            <div class="plateau-timer-wrap">
+              <div class="timer-countdown" id="dispPlateauTimer">--:--</div>
+              <div class="timer-sub" id="dispPlateauSub">Nenhum patamar ativo</div>
+            </div>
+
+            <div class="time-stats-grid">
+              <div class="time-stat">
+                <span class="t-lbl">Tempo Total Decorrido</span>
+                <span class="t-val" id="dispTotalElapsed">00:00:00</span>
+              </div>
+              <div class="time-stat">
+                <span class="t-lbl">Tempo Restante Estimado</span>
+                <span class="t-val" id="dispTimeRemaining">--:--:--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3D/Interactive Kiln Heat Visualizer -->
+        <div class="kiln-visualizer-container">
+          <div class="visualizer-header">
+            <span><i class="fa-solid fa-cube"></i> CÂMARA DE QUEIMA - SIMULAÇÃO TÉRMICA</span>
+            <div class="kiln-status-lights">
+              <span class="heater-light" id="heaterLed"><i class="fa-solid fa-bolt"></i> RESISTÊNCIAS</span>
+              <span class="exhaust-light" id="exhaustLed"><i class="fa-solid fa-fan"></i> EXAUSTÃO</span>
+            </div>
+          </div>
+
+          <div class="kiln-chamber" id="kilnChamber">
+            <!-- Heat Glow Overlay -->
+            <div class="heat-glow-effect" id="heatGlow"></div>
+            
+            <!-- Heating Elements (Resistances) -->
+            <div class="heating-coils top-coils" id="topCoils"></div>
+            <div class="heating-coils bottom-coils" id="bottomCoils"></div>
+
+            <!-- Kiln Shelf & Ceramic Pieces -->
+            <div class="kiln-interior">
+              <div class="ceramic-props">
+                <div class="ceramic-vase vase-1" title="Vaso Cerâmico Terracota"></div>
+                <div class="ceramic-plate" title="Prato Decorativo"></div>
+                <div class="ceramic-vase vase-2" title="Jarra Esmaltada"></div>
+                <div class="ceramic-bowl" title="Tigela Raku"></div>
+              </div>
+              <div class="kiln-refractory-shelf"></div>
+            </div>
+
+            <!-- Heat Waves Particle Container -->
+            <div class="heat-waves" id="heatWaves"></div>
+
+            <!-- Kiln Temperature Overlay Badge -->
+            <div class="chamber-temp-badge">
+              <i class="fa-solid fa-fire"></i>
+              <span id="chamberTempBadge">25 °C</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Process Phase Step Indicator (Timeline) -->
+        <div class="process-phases-nav">
+          <div class="step-node active" id="step0" data-step="0">
+            <div class="step-dot"><i class="fa-solid fa-power-off"></i></div>
+            <div class="step-text">
+              <span class="step-title">1. Partida</span>
+              <span class="step-desc">Ambiente (~25°C)</span>
+            </div>
+          </div>
+          <div class="step-connector" id="conn1"></div>
+
+          <div class="step-node" id="step1" data-step="1">
+            <div class="step-dot"><i class="fa-solid fa-arrow-trend-up"></i></div>
+            <div class="step-text">
+              <span class="step-title">2. 1º Terço (1/3)</span>
+              <span class="step-desc"><span class="step-target-arranque">350</span>°C (15 min)</span>
+            </div>
+          </div>
+          <div class="step-connector" id="conn2"></div>
+
+          <div class="step-node" id="step2" data-step="2">
+            <div class="step-dot"><i class="fa-solid fa-fire"></i></div>
+            <div class="step-text">
+              <span class="step-title">3. 2º Terço (2/3)</span>
+              <span class="step-desc"><span class="step-target-twothirds">700</span>°C (15 min)</span>
+            </div>
+          </div>
+          <div class="step-connector" id="conn3"></div>
+
+          <div class="step-node" id="step3" data-step="3">
+            <div class="step-dot"><i class="fa-solid fa-fire-flame-curved"></i></div>
+            <div class="step-text">
+              <span class="step-title">4. Máximo (3/3)</span>
+              <span class="step-desc"><span class="step-target-max">1050</span>°C (15 min)</span>
+            </div>
+          </div>
+          <div class="step-connector" id="conn4"></div>
+
+          <div class="step-node" id="step4" data-step="4">
+            <div class="step-dot"><i class="fa-solid fa-snowflake"></i></div>
+            <div class="step-text">
+              <span class="step-title">5. Resfriamento</span>
+              <span class="step-desc">Até &lt; 30°C</span>
+            </div>
+          </div>
+          <div class="step-connector" id="conn5"></div>
+
+          <div class="step-node" id="step5" data-step="5">
+            <div class="step-dot"><i class="fa-solid fa-circle-check"></i></div>
+            <div class="step-text">
+              <span class="step-title">6. Concluído</span>
+              <span class="step-desc">Abertura Segura</span>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- RIGHT COLUMN: Linear Temperature Chart & Real-Time Telemetry Event Log -->
+      <section class="ihm-panel panel-graph-logs">
+        
+        <!-- Live Linear Graph Section -->
+        <div class="chart-section">
+          <div class="panel-header">
+            <div class="header-left">
+              <i class="fa-solid fa-chart-line"></i>
+              <h2>Curva Térmica da Queima</h2>
+            </div>
+            <div class="chart-legend-custom">
+              <span class="legend-item target"><span class="dot"></span> Setpoint Teórico</span>
+              <span class="legend-item actual"><span class="dot"></span> Temperatura Real</span>
+            </div>
+          </div>
+
+          <div class="chart-canvas-container">
+            <canvas id="temperatureChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Telemetry & Industrial Event Logger -->
+        <div class="logs-section">
+          <div class="panel-header compact">
+            <div class="header-left">
+              <i class="fa-solid fa-terminal"></i>
+              <h3>Log de Eventos & Telemetria</h3>
+            </div>
+            <button id="btnClearLogs" class="btn-text-action" title="Limpar Registros">
+              <i class="fa-solid fa-trash-can"></i> Limpar
+            </button>
+          </div>
+
+          <div class="logs-console" id="logConsole">
+            <!-- Dynamic logs will appear here -->
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer System Status Bar -->
+    <footer class="ihm-footer">
+      <div class="footer-left">
+        <span><i class="fa-solid fa-shield-halved"></i> Sistema de Proteção Ativo: Intertravamento Térmico + Termostato de Segurança (1350°C)</span>
+      </div>
+      <div class="footer-right">
+        <span>Protocolo: MODBUS TCP/IP</span>
+        <span class="sep">•</span>
+        <span>Taxa de Amostragem: 1000ms</span>
+        <span class="sep">•</span>
+        <span>Ceramic Kiln Pro v4.2</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
